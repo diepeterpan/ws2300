@@ -3,6 +3,15 @@
 use std::cell::RefCell;
 use std::thread::sleep;
 use std::time::Duration;
+use std::env;
+
+macro_rules! dbg_ws {
+    ($($arg:tt)*) => {
+        if env::var("WS2300_DEBUG").is_ok() {
+            eprintln!("[ws2300] {}", format!($($arg)*));
+        }
+    };
+}
 
 pub struct Device {
     port: RefCell<Box<dyn serialport::SerialPort>>,
@@ -274,9 +283,16 @@ impl Device {
     }
 
     fn try_read(&self, memory: &Memory) -> serialport::Result<Vec<u8>> {
-        for _ in 0..50 {
-            if let Ok(n) = self.read(memory) {
-                return Ok(n);
+        for i in 0..50 {
+            dbg_ws!("try_read attempt {} for address 0x{:X}", i, memory.address);
+            match self.read(memory) {
+                Ok(n) => {
+                    dbg_ws!("try_read success on attempt {}", i);
+                    return Ok(n);
+                }
+                Err(e) => {
+                    dbg_ws!("try_read attempt {} failed: {:?}", i, e);
+                }
             }
         }
 
@@ -287,27 +303,37 @@ impl Device {
     }
 
     fn read(&self, memory: &Memory) -> serialport::Result<Vec<u8>> {
+        dbg_ws!("read: addr=0x{:X} size={}", memory.address, memory.size);
+
         let mut response: Vec<u8> = Vec::with_capacity(memory.size);
         let mut buffer: [u8; 1] = [0; 1];
         let command = Self::encode_address(memory);
 
+        dbg_ws!("command bytes: {:?}", command);
+
         self.reset()?;
 
         for (i, c) in command.iter().enumerate().take(5) {
+            dbg_ws!("write byte 0x{:02X} seq {}", c, i);
             self.port.borrow_mut().write_all(&[*c])?;
             self.port.borrow_mut().read_exact(&mut buffer[..])?;
+            dbg_ws!("echo byte 0x{:02X}", buffer[0]);
             Self::check(*c, i, buffer[0])?;
         }
 
-        for _ in 0..memory.size {
+        for idx in 0..memory.size {
             self.port.borrow_mut().read_exact(&mut buffer[..])?;
+            dbg_ws!("data[{}] = 0x{:02X}", idx, buffer[0]);
 
             response.push(buffer[0]);
         }
 
         self.port.borrow_mut().read_exact(&mut buffer[..])?;
+        dbg_ws!("checksum read 0x{:02X}", buffer[0]);
 
         Self::check_data(buffer[0], response.clone())?;
+
+        dbg_ws!("read succeeded response={:?}", response);
 
         Ok(response)
     }
@@ -322,6 +348,14 @@ impl Device {
         if checksum == answer {
             Ok(())
         } else {
+            dbg_ws!(
+                "check failed: cmd=0x{:02X} seq={} expected=0x{:02X} got=0x{:02X}",
+                command,
+                sequence,
+                checksum,
+                answer
+            );
+
             Err(serialport::Error::new(
                 serialport::ErrorKind::Io(std::io::ErrorKind::Other),
                 "Check error",
@@ -341,6 +375,13 @@ impl Device {
         if checksum == answer as u32 {
             Ok(())
         } else {
+            dbg_ws!(
+                "check_data failed: computed=0x{:02X} answer=0x{:02X} response={:?}",
+                checksum,
+                answer,
+                response
+            );
+
             Err(serialport::Error::new(
                 serialport::ErrorKind::Io(std::io::ErrorKind::Other),
                 "Check data error",
@@ -378,7 +419,12 @@ impl Device {
             sleep(Duration::from_millis(100 * x));
         }
 
-        Ok(())
+        dbg_ws!("reset failed after retries");
+
+        Err(serialport::Error::new(
+            serialport::ErrorKind::Io(std::io::ErrorKind::Other),
+            "reset failed",
+        ))
     }
 
     fn encode_address(memory: &Memory) -> Vec<u8> {
