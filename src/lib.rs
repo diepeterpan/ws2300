@@ -129,6 +129,7 @@ impl Device {
             .flow_control(serialport::FlowControl::None)
             .parity(serialport::Parity::None)
             .stop_bits(serialport::StopBits::One)
+            .timeout(Duration::from_secs(1))
             .open()?;
 
         Self::setup(&mut port)?;
@@ -394,29 +395,33 @@ impl Device {
 
         for x in 0..100 {
             self.port.borrow_mut().flush()?;
+            dbg_ws!("reset: writing 0x06, attempt {}", x);
             self.port.borrow_mut().write_all(&[0x06])?;
 
-            loop {
-                self.port
-                    .borrow_mut()
-                    .read_exact(&mut buffer[..])
-                    .map_err(|_| {
-                        serialport::Error::new(
-                            serialport::ErrorKind::Io(std::io::ErrorKind::Other),
-                            "reset failed",
-                        )
-                    })?;
-
-                if buffer[0] == 1 {
-                    continue;
-                } else if buffer[0] == 2 {
-                    return Ok(());
-                } else {
-                    break;
+            let mut reset_ok = false;
+            for _ in 0..10 {
+                match self.port.borrow_mut().read_exact(&mut buffer[..]) {
+                    Ok(_) => {
+                        dbg_ws!("reset: read response 0x{:02X}", buffer[0]);
+                        if buffer[0] == 0x01 {
+                            dbg_ws!("reset: got 0x01, device busy, retrying");
+                            continue;
+                        } else if buffer[0] == 0x02 {
+                            dbg_ws!("reset: got 0x02, device ready");
+                            return Ok(());
+                        } else {
+                            dbg_ws!("reset: unexpected response 0x{:02X}, breaking inner loop", buffer[0]);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        dbg_ws!("reset: read error on attempt {}: {:?}", x, e);
+                        break;
+                    }
                 }
             }
 
-            sleep(Duration::from_millis(100 * x));
+            sleep(Duration::from_millis(100 * (x + 1)));
         }
 
         dbg_ws!("reset failed after retries");
