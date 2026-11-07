@@ -9,6 +9,12 @@
 
 A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Crosse Technology WS2300** weather station (originally inspired by [Open2300](http://www.lavrsen.dk/foswiki/bin/view/Open2300/WebHome) and part of the [Uncontrolled Mechanical Ventilation](https://hackaday.io/project/12708-uncontrolled-mechanical-ventilation) project).
 
+<p align="center">
+  <img src="doc/dashboard.png" alt="WS2300 Web UI Dashboard" width="850">
+</p>
+
+*WS2300 Web UI dashboard displaying real-time sensor metrics, previous comparisons, hardware serial link status, and wind compass.*
+
 ---
 
 ## Key Features

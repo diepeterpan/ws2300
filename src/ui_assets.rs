@@ -172,14 +172,6 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       padding: 0.15rem 0.5rem;
     }
 
-    .dot {
-      width: 8px;
-      height: 8px;
-      display: inline-block;
-      border-radius: 1px;
-      background: currentColor;
-    }
-
     /* Serial Comms Indicator */
     .serial-indicator {
       display: inline-flex;
@@ -199,34 +191,49 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     }
 
     .serial-led {
-      width: 10px;
-      height: 10px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
-      border: 1px solid rgba(0, 0, 0, 0.25);
       display: inline-block;
       flex-shrink: 0;
-      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+      position: relative;
+      box-sizing: border-box;
+      transition: background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    }
+
+    /* Specular curved reflection */
+    .serial-led::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2.5px;
+      width: 5px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.75);
+      border-radius: 50% 50% 40% 40%;
+      transform: rotate(-25deg);
+      pointer-events: none;
     }
 
     /* Red when not connected or error */
     .serial-led.led-red {
-      background-color: #EF4444;
-      border-color: #DC2626;
-      box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+      background: radial-gradient(circle at 35% 35%, #F87171 0%, #DC2626 55%, #7F1D1D 100%);
+      border: 1.5px solid #EF4444;
+      box-shadow: 0 0 7px rgba(239, 68, 68, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.4);
     }
 
     /* Dark green when serial connected */
     .serial-led.led-dark-green {
-      background-color: #047857;
-      border-color: #065F46;
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+      background: radial-gradient(circle at 35% 35%, #059669 0%, #047857 55%, #022c22 100%);
+      border: 1.5px solid #10B981;
+      box-shadow: 0 0 4px rgba(16, 185, 129, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.35);
     }
 
     /* Light green when bits fly / data received */
     .serial-led.led-flash {
-      background-color: #10B981;
-      border-color: #34D399;
-      box-shadow: 0 0 10px #34D399, inset 0 0 4px #ECFDF5;
+      background: radial-gradient(circle at 35% 35%, #6EE7B7 0%, #10B981 45%, #065F46 100%);
+      border: 1.5px solid #34D399;
+      box-shadow: 0 0 12px #34D399, 0 0 4px #ECFDF5, inset 0 1px 3px rgba(255, 255, 255, 0.75);
     }
 
     /* Buttons */
@@ -262,6 +269,16 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
     .btn-primary:hover {
       background: var(--accent-hover);
+    }
+
+    .btn-danger {
+      background: #DC2626;
+      color: #FFFFFF;
+      border-color: #B91C1C;
+    }
+
+    .btn-danger:hover {
+      background: #B91C1C;
     }
 
     .btn-dark {
@@ -796,12 +813,10 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       </div>
 
       <span id="service-status-badge" class="badge badge-running">
-        <span class="dot"></span>
         <span id="service-status-text">SERVICE RUNNING</span>
       </span>
 
-      <button type="button" id="btn-start-service" class="btn btn-primary">Start</button>
-      <button type="button" id="btn-stop-service" class="btn btn-dark">Stop</button>
+      <button type="button" id="btn-toggle-service" class="btn btn-danger">Stop</button>
 
       <button type="button" id="drawer-open-btn" class="hamburger-btn" aria-label="Open Navigation Menu" aria-expanded="false" aria-controls="nav-drawer">
         <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square">
@@ -1547,6 +1562,8 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
       const badge = document.getElementById('service-status-badge');
       const statusText = document.getElementById('service-status-text');
+      const toggleBtn = document.getElementById('btn-toggle-service');
+
       if (snap.alert_active) {
         badge.className = 'badge badge-alert';
         statusText.textContent = 'STALE DATA ALERT';
@@ -1556,6 +1573,18 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       } else {
         badge.className = 'badge badge-stopped';
         statusText.textContent = 'SERVICE STOPPED';
+      }
+
+      currentServiceRunning = !!snap.running;
+
+      if (toggleBtn) {
+        if (snap.running) {
+          toggleBtn.textContent = 'Stop';
+          toggleBtn.className = 'btn btn-danger';
+        } else {
+          toggleBtn.textContent = 'Start';
+          toggleBtn.className = 'btn btn-primary';
+        }
       }
 
       document.getElementById('header-port-label').textContent =
@@ -1861,19 +1890,22 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       }
     });
 
-    document.getElementById('btn-start-service').addEventListener('click', async () => {
-      const res = await fetch('/api/service/start', { method: 'POST' });
-      if (res.ok) {
-        renderSnapshot(await res.json());
-        showToast('WS2300 Polling Service Started');
-      }
-    });
+    let currentServiceRunning = false;
 
-    document.getElementById('btn-stop-service').addEventListener('click', async () => {
-      const res = await fetch('/api/service/stop', { method: 'POST' });
-      if (res.ok) {
-        renderSnapshot(await res.json());
-        showToast('WS2300 Polling Service Stopped');
+    document.getElementById('btn-toggle-service').addEventListener('click', async () => {
+      const toggleBtn = document.getElementById('btn-toggle-service');
+      toggleBtn.disabled = true;
+      try {
+        const willStop = currentServiceRunning;
+        const endpoint = willStop ? '/api/service/stop' : '/api/service/start';
+        const res = await fetch(endpoint, { method: 'POST' });
+        if (res.ok) {
+          const snap = await res.json();
+          renderSnapshot(snap);
+          showToast(willStop ? 'WS2300 Polling Service Stopped' : 'WS2300 Polling Service Started');
+        }
+      } finally {
+        toggleBtn.disabled = false;
       }
     });
 
