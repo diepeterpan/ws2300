@@ -1759,7 +1759,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       document.getElementById('b-rt-max').value = b.rain_total.max;
     }
 
-    async function scanSerialPorts() {
+    async function scanSerialPorts(showFeedback = false) {
       const res = await fetch('/api/serial-ports');
       if (!res.ok) return;
       const ports = await res.json();
@@ -1770,10 +1770,12 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         opt.value = p;
         dl.appendChild(opt);
       });
-      showToast(`Detected ${ports.length} serial port candidate(s)`);
+      if (showFeedback) {
+        showToast(`Detected ${ports.length} serial port candidate(s)`);
+      }
     }
 
-    document.getElementById('btn-scan-ports').addEventListener('click', scanSerialPorts);
+    document.getElementById('btn-scan-ports').addEventListener('click', () => scanSerialPorts(true));
     document.getElementById('cfg-smtp-security').addEventListener('change', (e) => {
       const portInput = document.getElementById('cfg-smtp-port');
       const val = e.target.value;
