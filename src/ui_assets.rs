@@ -236,6 +236,50 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       box-shadow: 0 0 12px #34D399, 0 0 4px #ECFDF5, inset 0 1px 3px rgba(255, 255, 255, 0.75);
     }
 
+    /* OIDC User Badge */
+    .user-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.65rem;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-main);
+      border-radius: var(--radius-sharp);
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .user-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--accent-primary);
+      flex-shrink: 0;
+    }
+
+    .user-name {
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .logout-btn {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 0 0.2rem;
+      border-radius: 2px;
+      margin-left: 0.2rem;
+      transition: color 0.15s ease;
+    }
+
+    .logout-btn:hover {
+      color: #EF4444;
+    }
+
     /* Buttons */
     .btn {
       font-family: var(--font-display);
@@ -818,6 +862,15 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
       <button type="button" id="btn-toggle-service" class="btn btn-danger">Stop</button>
 
+      <div id="oidc-user-badge" class="user-badge" style="display: none;" title="Authenticated via OIDC">
+        <svg class="user-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span id="oidc-user-name" class="user-name"></span>
+        <a href="/auth/logout" class="logout-btn" title="Log out">✕</a>
+      </div>
+
       <button type="button" id="drawer-open-btn" class="hamburger-btn" aria-label="Open Navigation Menu" aria-expanded="false" aria-controls="nav-drawer">
         <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="square">
           <path d="M3 6h18M3 12h18M3 18h18"/>
@@ -845,6 +898,12 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
             <span>Settings</span>
             <span>▸</span>
           </button>
+        </li>
+        <li id="drawer-logout-item" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border-main); padding-top: 0.5rem;">
+          <a href="/auth/logout" class="nav-item-btn" style="text-decoration: none; color: #DC2626;">
+            <span>Log Out</span>
+            <span>⎋</span>
+          </a>
         </li>
       </ul>
     </nav>
@@ -1921,6 +1980,25 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       }
     });
 
+    async function checkCurrentUser() {
+      try {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const data = await res.json();
+        const badge = document.getElementById('oidc-user-badge');
+        const nameEl = document.getElementById('oidc-user-name');
+        const drawerLogout = document.getElementById('drawer-logout-item');
+        if (data.oidc_enabled && data.username) {
+          nameEl.textContent = data.username;
+          badge.style.display = 'inline-flex';
+          drawerLogout.style.display = 'block';
+        } else {
+          badge.style.display = 'none';
+          drawerLogout.style.display = 'none';
+        }
+      } catch (_) {}
+    }
+
     async function init() {
       const statusRes = await fetch('/api/status');
       if (statusRes.status === 401) {
@@ -1930,6 +2008,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       if (statusRes.ok) {
         renderSnapshot(await statusRes.json());
       }
+      await checkCurrentUser();
       await loadConfigIntoForm();
       await scanSerialPorts();
 

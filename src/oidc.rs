@@ -171,6 +171,12 @@ pub async fn exchange_code_for_subject(
                 base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, parts[1])
             && let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&bytes)
         {
+            if let Some(user) = json_val.get("preferred_username").and_then(|v| v.as_str()) {
+                return Ok(user.to_string());
+            }
+            if let Some(name) = json_val.get("name").and_then(|v| v.as_str()) {
+                return Ok(name.to_string());
+            }
             if let Some(email) = json_val.get("email").and_then(|v| v.as_str()) {
                 return Ok(email.to_string());
             }
@@ -188,6 +194,12 @@ pub async fn exchange_code_for_subject(
             .await
         && let Ok(json_val) = u_resp.json::<serde_json::Value>().await
     {
+        if let Some(user) = json_val.get("preferred_username").and_then(|v| v.as_str()) {
+            return Ok(user.to_string());
+        }
+        if let Some(name) = json_val.get("name").and_then(|v| v.as_str()) {
+            return Ok(name.to_string());
+        }
         if let Some(email) = json_val.get("email").and_then(|v| v.as_str()) {
             return Ok(email.to_string());
         }

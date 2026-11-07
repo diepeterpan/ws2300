@@ -38,10 +38,82 @@ A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Cross
 - **Stale Data Watchdog & Multi-Channel Alerts**:
   - Triggers an alert when no valid values are received for `N` minutes (`stale_timeout_minutes`).
   - Supports **Email (SMTP)**, **Telegram Bot API**, and **Generic Webhook URLs** (compatible with Ntfy, Gotify, Slack, Discord, and Apprise).
-- **Optional OIDC Authentication**:
-  - Toggleable OpenID Connect (OIDC) login flow (`oidc.enabled`) using standard discovery or custom endpoints—identity-only with no complex permission/role setup required.
+- **Optional OIDC Authentication & Single Sign-On**:
+  - Toggleable OpenID Connect (OIDC) login flow (`oidc.enabled`) supporting standard discovery, authorization code flow with **RFC 7636 PKCE (S256)**, and authenticated user indicator in the header.
 - **Atomic YAML Configuration**:
   - All settings are stored in `config.yaml` (see [`config.example.yaml`](config.example.yaml)).
+
+---
+
+## OpenID Connect (OIDC) & Single Sign-On
+
+WS2300 includes built-in OIDC identity authentication to protect the Web UI and API routes without complex RBAC configuration.
+
+### Security & PKCE Support
+- **Proof Key for Code Exchange (RFC 7636 PKCE)**: WS2300 implements the `S256` code challenge and verifier flow during the authorization code exchange, protecting against code interception attacks.
+- **Header Profile Pill**: Once logged in, the active username or email is displayed in the top header beside a user icon, along with a quick-logout shortcut.
+
+### System CA Trust & Private PKI (Cargo.toml Configuration)
+WS2300 uses `reqwest` compiled with `rustls-tls-native-roots`:
+```toml
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots"] }
+```
+Unlike standard Rust TLS configurations that only bundle public Mozilla root certificates, this allows WS2300 to **inherit the host operating system's trust store** (such as `/etc/ssl/certs/ca-certificates.crt`).
+
+To trust an internal or private Certificate Authority (such as for internal Authelia or Keycloak instances):
+```bash
+# Debian / Ubuntu host or Docker container:
+sudo cp my-private-ca.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+```
+
+> [!NOTE]
+> Ensure internal CA and server certificates comply with RFC 5280 by including `X509v3 Authority Key Identifier` (AKID) and `X509v3 Subject Key Identifier` extensions for strict TLS handshake validation.
+
+### Sample Authelia Client Configuration
+
+Below is an anonymized sample client definition to add to Authelia's `configuration.yml` under `identity_providers.oidc.clients`:
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: 'ws2300-web'
+        client_name: 'WS2300 Weather Station'
+        consent_mode: 'implicit'
+        # Generate with: authelia crypto hash generate pbkdf2 --variant sha512
+        client_secret: '$pbkdf2-sha512$310000$exampleSalt$exampleHash...'
+        public: false
+        authorization_policy: 'one_factor' # Or 'two_factor' depending on your security policy
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+          - 'groups'
+        redirect_uris:
+          - 'https://ws2300.example.com/auth/callback'
+        grant_types:
+          - 'authorization_code'
+        response_types:
+          - 'code'
+        access_token_signed_response_alg: 'none'
+        userinfo_signed_response_alg: 'none'
+        token_endpoint_auth_method: 'client_secret_post'
+        require_pkce: true
+        pkce_challenge_method: 'S256'
+```
+
+### Corresponding WS2300 `config.yaml` Settings
+
+```yaml
+oidc:
+  enabled: true
+  issuer_url: "https://authelia.example.com"
+  client_id: "ws2300-web"
+  client_secret: "yourPlainTextClientSecret"
+  redirect_url: "https://ws2300.example.com/auth/callback"
+  session_secret: "generate-a-secure-random-32-byte-hex-string"
+```
 
 ---
 

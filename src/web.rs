@@ -37,6 +37,7 @@ pub fn build_router(state: Arc<SharedState>) -> Router {
         .route("/api/service/start", post(start_service_handler))
         .route("/api/service/stop", post(stop_service_handler))
         .route("/api/alerts/test", post(test_alert_handler))
+        .route("/api/auth/me", get(get_current_user_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             oidc_auth_middleware,
@@ -205,6 +206,25 @@ async fn stop_service_handler(State(state): State<Arc<SharedState>>) -> impl Int
     let snap = state.snapshot().await;
     state.broadcast_snapshot().await;
     Json(snap)
+}
+
+async fn get_current_user_handler(
+    State(state): State<Arc<SharedState>>,
+    jar: CookieJar,
+) -> impl IntoResponse {
+    let oidc_cfg = state.config.read().await.oidc.clone();
+    if !oidc_cfg.enabled {
+        return Json(json!({ "oidc_enabled": false, "username": null }));
+    }
+
+    let username = jar
+        .get(SESSION_COOKIE_NAME)
+        .and_then(|c| verify_session_cookie_value(c.value(), &oidc_cfg.session_secret));
+
+    Json(json!({
+        "oidc_enabled": true,
+        "username": username
+    }))
 }
 
 async fn test_alert_handler(State(state): State<Arc<SharedState>>) -> impl IntoResponse {
