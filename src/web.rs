@@ -2,7 +2,7 @@ use crate::alerts::dispatch_alert;
 use crate::config::AppConfig;
 use crate::oidc::{
     SESSION_COOKIE_NAME, STATE_COOKIE_NAME, build_authorize_redirect_url,
-    create_session_cookie_value, exchange_code_for_subject, sign_value,
+    create_session_cookie_value, exchange_code_for_subject, generate_pkce_pair, sign_value,
     verify_session_cookie_value, verify_signed_value,
 };
 use crate::service::SharedState;
@@ -229,9 +229,11 @@ async fn oidc_login_handler(State(state): State<Arc<SharedState>>, jar: CookieJa
 
     let random_nonce: u64 = rand::random();
     let state_token = format!("{random_nonce:016x}");
-    let signed_state = sign_value(&state_token, &oidc_cfg.session_secret);
+    let (code_verifier, code_challenge) = generate_pkce_pair();
+    let state_cookie_payload = format!("{state_token}|{code_verifier}");
+    let signed_state = sign_value(&state_cookie_payload, &oidc_cfg.session_secret);
 
-    match build_authorize_redirect_url(&oidc_cfg, &state_token).await {
+    match build_authorize_redirect_url(&oidc_cfg, &state_token, &code_challenge).await {
         Ok(url) => {
             let mut cookie = Cookie::new(STATE_COOKIE_NAME, signed_state);
             cookie.set_path("/");
@@ -247,10 +249,16 @@ async fn oidc_login_handler(State(state): State<Arc<SharedState>>, jar: CookieJa
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct OidcCallbackQuery {
-    code: String,
-    state: String,
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    error: Option<String>,
+    #[serde(default)]
+    error_description: Option<String>,
 }
 
 async fn oidc_callback_handler(
@@ -259,6 +267,41 @@ async fn oidc_callback_handler(
     Query(query): Query<OidcCallbackQuery>,
 ) -> Response {
     let oidc_cfg = state.config.read().await.oidc.clone();
+
+    if let Some(err) = query.error {
+        let desc = query.error_description.unwrap_or_default();
+        return (
+            StatusCode::BAD_REQUEST,
+            Html(format!(
+                "<h2>OIDC Authentication Error</h2><p><strong>{}</strong>: {}</p><p><a href=\"/\">Return to Home</a></p>",
+                html_escape(&err),
+                html_escape(&desc)
+            )),
+        )
+            .into_response();
+    }
+
+    let code = match query.code {
+        Some(c) if !c.trim().is_empty() => c,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Html("<h2>OIDC Callback Error</h2><p>Missing authorization code in callback parameters.</p>".to_string()),
+            )
+                .into_response();
+        }
+    };
+
+    let query_state = match query.state {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Html("<h2>OIDC Callback Error</h2><p>Missing state parameter in callback.</p>".to_string()),
+            )
+                .into_response();
+        }
+    };
 
     let state_cookie = match jar.get(STATE_COOKIE_NAME) {
         Some(c) => c.value().to_string(),
@@ -271,7 +314,7 @@ async fn oidc_callback_handler(
         }
     };
 
-    let expected_state = match verify_signed_value(&state_cookie, &oidc_cfg.session_secret) {
+    let expected_payload = match verify_signed_value(&state_cookie, &oidc_cfg.session_secret) {
         Some(s) => s,
         None => {
             return (
@@ -282,7 +325,12 @@ async fn oidc_callback_handler(
         }
     };
 
-    if expected_state != query.state {
+    let (expected_state, code_verifier) = match expected_payload.split_once('|') {
+        Some((st, cv)) => (st, cv),
+        None => (expected_payload.as_str(), ""),
+    };
+
+    if expected_state != query_state {
         return (
             StatusCode::BAD_REQUEST,
             Html("OIDC state mismatch".to_string()),
@@ -290,7 +338,7 @@ async fn oidc_callback_handler(
             .into_response();
     }
 
-    match exchange_code_for_subject(&oidc_cfg, &query.code).await {
+    match exchange_code_for_subject(&oidc_cfg, &code, code_verifier).await {
         Ok(subject) => {
             let session_val = create_session_cookie_value(&subject, &oidc_cfg.session_secret);
             let mut session_cookie = Cookie::new(SESSION_COOKIE_NAME, session_val);
@@ -313,6 +361,14 @@ async fn oidc_callback_handler(
         )
             .into_response(),
     }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn oidc_logout_handler(jar: CookieJar) -> Response {

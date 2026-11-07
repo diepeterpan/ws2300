@@ -1,12 +1,27 @@
 use crate::config::OidcConfig;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
 pub const SESSION_COOKIE_NAME: &str = "ws2300_session";
 pub const STATE_COOKIE_NAME: &str = "ws2300_oidc_state";
+
+pub fn generate_pkce_pair() -> (String, String) {
+    let mut random_bytes = [0u8; 32];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut random_bytes);
+    let verifier = URL_SAFE_NO_PAD.encode(random_bytes);
+
+    let mut hasher = Sha256::new();
+    hasher.update(verifier.as_bytes());
+    let hash = hasher.finalize();
+    let challenge = URL_SAFE_NO_PAD.encode(hash);
+
+    (verifier, challenge)
+}
 
 #[derive(Deserialize, Debug)]
 struct OidcDiscoveryDocument {
@@ -93,30 +108,43 @@ async fn resolve_endpoints(cfg: &OidcConfig) -> Result<(String, String, String),
 pub async fn build_authorize_redirect_url(
     cfg: &OidcConfig,
     state_token: &str,
+    code_challenge: &str,
 ) -> Result<String, String> {
     let (auth_ep, _, _) = resolve_endpoints(cfg).await?;
     let url = format!(
-        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}",
+        "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256",
         auth_ep,
         urlencoding::encode(cfg.client_id.trim()),
         urlencoding::encode(cfg.redirect_url.trim()),
         urlencoding::encode("openid profile email"),
         urlencoding::encode(state_token),
+        urlencoding::encode(code_challenge),
     );
     Ok(url)
 }
 
-pub async fn exchange_code_for_subject(cfg: &OidcConfig, code: &str) -> Result<String, String> {
+pub async fn exchange_code_for_subject(
+    cfg: &OidcConfig,
+    code: &str,
+    code_verifier: &str,
+) -> Result<String, String> {
     let (_, token_ep, userinfo_ep) = resolve_endpoints(cfg).await?;
     let client = reqwest::Client::new();
 
-    let params = [
+    let mut params = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
         ("redirect_uri", cfg.redirect_url.trim()),
         ("client_id", cfg.client_id.trim()),
-        ("client_secret", cfg.client_secret.trim()),
     ];
+
+    if !code_verifier.trim().is_empty() {
+        params.push(("code_verifier", code_verifier.trim()));
+    }
+
+    if !cfg.client_secret.trim().is_empty() {
+        params.push(("client_secret", cfg.client_secret.trim()));
+    }
 
     let resp = client
         .post(&token_ep)
