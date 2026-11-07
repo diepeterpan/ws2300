@@ -1,0 +1,92 @@
+service:
+  auto_start: true
+  poll_interval_seconds: 60
+  bind_address: "0.0.0.0:8080"
+  demo_mode: false
+
+serial:
+  port: "/dev/ttyUSB0"
+
+metrics:
+  include_wind: true
+  include_rain: true
+
+mqtt:
+  enabled: false
+  broker_host: "127.0.0.1"
+  broker_port: 1883
+  username: ""
+  password: ""
+  topic: "weather/ws2300"
+  client_id: "ws2300-station"
+  retain: true
+
+alerts:
+  enabled: false
+  stale_timeout_minutes: 15
+  email:
+    enabled: false
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    smtp_username: ""
+    smtp_password: ""
+    from_address: "ws2300@example.com"
+    to_address: "admin@example.com"
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  webhook:
+    enabled: false
+    url: "https://ntfy.sh/ws2300-alerts"
+
+oidc:
+  enabled: false
+  issuer_url: "https://auth.example.com"
+  authorization_endpoint: ""
+  token_endpoint: ""
+  userinfo_endpoint: ""
+  client_id: "ws2300-web"
+  client_secret: ""
+  redirect_url: "http://localhost:8080/auth/callback"
+  session_secret: "change-me-session-secret-ws2300-key"
+
+bounds:
+  replace_with_previous: true
+  temperature_indoor:
+    min: -10.0
+    max: 50.0
+  temperature_outdoor:
+    min: -40.0
+    max: 60.0
+  dewpoint:
+    min: -40.0
+    max: 60.0
+  humidity_indoor:
+    min: 1
+    max: 100
+  humidity_outdoor:
+    min: 1
+    max: 100
+  wind_speed:
+    min: 0.0
+    max: 75.0
+  wind_dir:
+    min: 0.0
+    max: 360.0
+  wind_chill:
+    min: -50.0
+    max: 60.0
+  rain_1h:
+    min: 0.0
+    max: 500.0
+  rain_24h:
+    min: 0.0
+    max: 1000.0
+  rain_total:
+    min: 0.0
+    max: 99999.0
+  pressure:
+    min: 850.0
+    max: 1100.0
+

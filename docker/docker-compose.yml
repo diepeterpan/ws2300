@@ -1,0 +1,19 @@
+services:
+  ws2300:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    container_name: ws2300
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - WS2300_CONFIG=/app/config/config.yaml
+      - RUST_LOG=info
+    volumes:
+      - ./config:/app/config
+    # Uncomment the devices section below when attaching physical RS232/USB hardware:
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+

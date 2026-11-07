@@ -1,2 +1,18 @@
+# Rust build artifacts
 /Cargo.lock
 /target
+
+# Compiled binaries deployed to ./bin via Docker (keep .gitkeep)
+/bin/*
+!/bin/.gitkeep
+
+# Runtime YAML configuration & secrets
+/config.yaml
+/config.mock.yaml
+/config.yaml.tmp
+/docker/config/
+
+# Environment & IDE files
+.env
+*.swp
+.DS_Store

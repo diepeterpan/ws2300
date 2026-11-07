@@ -1,9 +1,9 @@
 #![warn(warnings)]
 
 use std::cell::RefCell;
+use std::env;
 use std::thread::sleep;
 use std::time::Duration;
-use std::env;
 
 macro_rules! dbg_ws {
     ($($arg:tt)*) => {
@@ -18,23 +18,30 @@ pub struct Device {
     memory: MemoryMap,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct Data {
-    temperature_indoor: f32,
-    temperature_outdoor: f32,
-    dewpoint: f32,
-    humidity_indoor: u32,
-    humidity_outdoor: u32,
-    wind_speed: f32,
-    wind_dir: f32,
-    wind_direction: String,
-    wind_chill: f32,
-    rain_1h: f32,
-    rain_24h: f32,
-    rain_total: f32,
-    pressure: f32,
-    tendency: String,
-    forecast: String,
+    pub temperature_indoor: f32,
+    pub temperature_outdoor: f32,
+    pub dewpoint: f32,
+    pub humidity_indoor: u32,
+    pub humidity_outdoor: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wind_speed: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wind_dir: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wind_direction: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wind_chill: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rain_1h: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rain_24h: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rain_total: Option<f32>,
+    pub pressure: f32,
+    pub tendency: String,
+    pub forecast: String,
 }
 
 struct MemoryMap {
@@ -138,26 +145,55 @@ impl Device {
     }
 
     fn setup(port: &mut Box<dyn serialport::SerialPort>) -> serialport::Result<()> {
-        port.write_request_to_send(true)?;
-        port.write_data_terminal_ready(false)?;
+        let _ = port.write_request_to_send(true);
+        let _ = port.write_data_terminal_ready(false);
 
         Ok(())
     }
 
     pub fn read_all(&self) -> serialport::Result<Data> {
+        self.read_filtered(true, true)
+    }
+
+    pub fn read_filtered(
+        &self,
+        include_wind: bool,
+        include_rain: bool,
+    ) -> serialport::Result<Data> {
+        let (wind_speed, wind_dir, wind_direction, wind_chill) = if include_wind {
+            (
+                Some(self.wind_speed()?),
+                Some(self.wind_dir()?),
+                Some(self.wind_direction()?),
+                Some(self.wind_chill()?),
+            )
+        } else {
+            (None, None, None, None)
+        };
+
+        let (rain_1h, rain_24h, rain_total) = if include_rain {
+            (
+                Some(self.rain_1h()?),
+                Some(self.rain_24h()?),
+                Some(self.rain_total()?),
+            )
+        } else {
+            (None, None, None)
+        };
+
         Ok(Data {
             temperature_indoor: self.temperature_indoor()?,
             temperature_outdoor: self.temperature_outdoor()?,
             dewpoint: self.dewpoint()?,
             humidity_indoor: self.humidity_indoor()?,
             humidity_outdoor: self.humidity_outdoor()?,
-            wind_speed: self.wind_speed()?,
-            wind_dir: self.wind_dir()?,
-            wind_direction: self.wind_direction()?,
-            wind_chill: self.wind_chill()?,
-            rain_1h: self.rain_1h()?,
-            rain_24h: self.rain_24h()?,
-            rain_total: self.rain_total()?,
+            wind_speed,
+            wind_dir,
+            wind_direction,
+            wind_chill,
+            rain_1h,
+            rain_24h,
+            rain_total,
             pressure: self.pressure()?,
             tendency: self.tendency()?,
             forecast: self.forecast()?,
@@ -224,7 +260,7 @@ impl Device {
 
         let index: usize = (value[0] >> 4) as usize;
 
-        Ok(String::from(directions[index]))
+        Ok(String::from(*directions.get(index).unwrap_or(&"N")))
     }
 
     pub fn wind_chill(&self) -> serialport::Result<f32> {
@@ -270,7 +306,7 @@ impl Device {
 
         let index = (value[0] >> 4) as usize;
 
-        Ok(String::from(tendencies[index]))
+        Ok(String::from(*tendencies.get(index).unwrap_or(&"Steady")))
     }
 
     pub fn forecast(&self) -> serialport::Result<String> {
@@ -280,7 +316,7 @@ impl Device {
 
         let index = (value[0] & 0xF) as usize;
 
-        Ok(String::from(forecasts[index]))
+        Ok(String::from(*forecasts.get(index).unwrap_or(&"Cloudy")))
     }
 
     fn try_read(&self, memory: &Memory) -> serialport::Result<Vec<u8>> {
@@ -398,7 +434,6 @@ impl Device {
             dbg_ws!("reset: writing 0x06, attempt {}", x);
             self.port.borrow_mut().write_all(&[0x06])?;
 
-            let mut reset_ok = false;
             for _ in 0..10 {
                 match self.port.borrow_mut().read_exact(&mut buffer[..]) {
                     Ok(_) => {
@@ -410,7 +445,10 @@ impl Device {
                             dbg_ws!("reset: got 0x02, device ready");
                             return Ok(());
                         } else {
-                            dbg_ws!("reset: unexpected response 0x{:02X}, breaking inner loop", buffer[0]);
+                            dbg_ws!(
+                                "reset: unexpected response 0x{:02X}, breaking inner loop",
+                                buffer[0]
+                            );
                             break;
                         }
                     }
