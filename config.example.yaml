@@ -44,9 +44,10 @@ alerts:
 oidc:
   enabled: false
   issuer_url: "https://auth.example.com"
-  authorization_endpoint: ""
-  token_endpoint: ""
-  userinfo_endpoint: ""
+  # Optional manual overrides if discovery is disabled:
+  # authorization_endpoint: ""
+  # token_endpoint: ""
+  # userinfo_endpoint: ""
   client_id: "ws2300-web"
   client_secret: ""
   redirect_url: "http://localhost:8080/auth/callback"
