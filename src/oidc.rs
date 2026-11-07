@@ -29,6 +29,8 @@ struct OidcDiscoveryDocument {
     token_endpoint: String,
     #[serde(default)]
     userinfo_endpoint: String,
+    #[serde(default)]
+    end_session_endpoint: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -105,6 +107,23 @@ async fn resolve_endpoints(cfg: &OidcConfig) -> Result<(String, String, String),
     ))
 }
 
+pub async fn get_logout_redirect_url(cfg: &OidcConfig) -> String {
+    let issuer = cfg.issuer_url.trim().trim_end_matches('/');
+    let discovery_url = format!("{issuer}/.well-known/openid-configuration");
+    let client = reqwest::Client::new();
+
+    if let Ok(resp) = client.get(&discovery_url).send().await
+        && let Ok(doc) = resp.json::<OidcDiscoveryDocument>().await
+        && let Some(end_session) = doc.end_session_endpoint
+        && !end_session.trim().is_empty()
+    {
+        return end_session;
+    }
+
+    // Standard fallback for Authelia and common OIDC providers
+    format!("{issuer}/logout")
+}
+
 pub async fn build_authorize_redirect_url(
     cfg: &OidcConfig,
     state_token: &str,
@@ -164,6 +183,45 @@ pub async fn exchange_code_for_subject(
         .await
         .map_err(|e| format!("Invalid OIDC token response JSON: {e}"))?;
 
+    // First, if userinfo endpoint is available and we have an access token, try fetching userinfo
+    // as it contains the authoritative profile claims (preferred_username, name, email)
+    if !userinfo_ep.is_empty() && !token_data.access_token.is_empty() {
+        if let Ok(u_resp) = client
+            .get(&userinfo_ep)
+            .bearer_auth(&token_data.access_token)
+            .send()
+            .await
+        {
+            if u_resp.status().is_success() {
+                if let Ok(json_val) = u_resp.json::<serde_json::Value>().await {
+                    if let Some(user) = json_val.get("preferred_username").and_then(|v| v.as_str()) {
+                        if !user.trim().is_empty() {
+                            return Ok(user.trim().to_string());
+                        }
+                    }
+                    if let Some(user) = json_val.get("username").and_then(|v| v.as_str()) {
+                        if !user.trim().is_empty() {
+                            return Ok(user.trim().to_string());
+                        }
+                    }
+                    if let Some(name) = json_val.get("name").and_then(|v| v.as_str()) {
+                        if !name.trim().is_empty() {
+                            return Ok(name.trim().to_string());
+                        }
+                    }
+                    if let Some(email) = json_val.get("email").and_then(|v| v.as_str()) {
+                        if !email.trim().is_empty() {
+                            return Ok(email.trim().to_string());
+                        }
+                    }
+                }
+            } else {
+                tracing::warn!("OIDC userinfo endpoint returned status: {}", u_resp.status());
+            }
+        }
+    }
+
+    // Next check ID token claims if present
     if let Some(id_token) = token_data.id_token {
         let parts: Vec<&str> = id_token.split('.').collect();
         if parts.len() >= 2
@@ -172,43 +230,34 @@ pub async fn exchange_code_for_subject(
             && let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&bytes)
         {
             if let Some(user) = json_val.get("preferred_username").and_then(|v| v.as_str()) {
-                return Ok(user.to_string());
+                if !user.trim().is_empty() {
+                    return Ok(user.trim().to_string());
+                }
+            }
+            if let Some(user) = json_val.get("username").and_then(|v| v.as_str()) {
+                if !user.trim().is_empty() {
+                    return Ok(user.trim().to_string());
+                }
             }
             if let Some(name) = json_val.get("name").and_then(|v| v.as_str()) {
-                return Ok(name.to_string());
+                if !name.trim().is_empty() {
+                    return Ok(name.trim().to_string());
+                }
             }
             if let Some(email) = json_val.get("email").and_then(|v| v.as_str()) {
-                return Ok(email.to_string());
+                if !email.trim().is_empty() {
+                    return Ok(email.trim().to_string());
+                }
             }
             if let Some(sub) = json_val.get("sub").and_then(|v| v.as_str()) {
-                return Ok(sub.to_string());
+                if !sub.trim().is_empty() {
+                    return Ok(sub.trim().to_string());
+                }
             }
         }
     }
 
-    if !userinfo_ep.is_empty()
-        && let Ok(u_resp) = client
-            .get(&userinfo_ep)
-            .bearer_auth(&token_data.access_token)
-            .send()
-            .await
-        && let Ok(json_val) = u_resp.json::<serde_json::Value>().await
-    {
-        if let Some(user) = json_val.get("preferred_username").and_then(|v| v.as_str()) {
-            return Ok(user.to_string());
-        }
-        if let Some(name) = json_val.get("name").and_then(|v| v.as_str()) {
-            return Ok(name.to_string());
-        }
-        if let Some(email) = json_val.get("email").and_then(|v| v.as_str()) {
-            return Ok(email.to_string());
-        }
-        if let Some(sub) = json_val.get("sub").and_then(|v| v.as_str()) {
-            return Ok(sub.to_string());
-        }
-    }
-
-    Ok(String::from("authenticated-oidc-user"))
+    Ok(String::from("authenticated-user"))
 }
 
 #[cfg(test)]

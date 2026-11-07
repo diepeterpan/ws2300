@@ -2,8 +2,8 @@ use crate::alerts::dispatch_alert;
 use crate::config::AppConfig;
 use crate::oidc::{
     SESSION_COOKIE_NAME, STATE_COOKIE_NAME, build_authorize_redirect_url,
-    create_session_cookie_value, exchange_code_for_subject, generate_pkce_pair, sign_value,
-    verify_session_cookie_value, verify_signed_value,
+    create_session_cookie_value, exchange_code_for_subject, generate_pkce_pair,
+    get_logout_redirect_url, sign_value, verify_session_cookie_value, verify_signed_value,
 };
 use crate::service::SharedState;
 use crate::ui_assets::{INDEX_HTML, LOGO_SVG, WEBMANIFEST_JSON};
@@ -391,8 +391,14 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-async fn oidc_logout_handler(jar: CookieJar) -> Response {
+async fn oidc_logout_handler(
+    State(state): State<Arc<SharedState>>,
+    jar: CookieJar,
+) -> Response {
+    let oidc_cfg = state.config.read().await.oidc.clone();
+    let logout_target = get_logout_redirect_url(&oidc_cfg).await;
+
     let mut remove_session = Cookie::new(SESSION_COOKIE_NAME, "");
     remove_session.set_path("/");
-    (jar.remove(remove_session), Redirect::to("/auth/login")).into_response()
+    (jar.remove(remove_session), Redirect::to(&logout_target)).into_response()
 }
