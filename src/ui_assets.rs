@@ -180,6 +180,55 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       background: currentColor;
     }
 
+    /* Serial Comms Indicator */
+    .serial-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.35rem 0.65rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-main);
+      border-radius: var(--radius-sharp);
+      font-family: var(--font-display);
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-main);
+      user-select: none;
+    }
+
+    .serial-led {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.25);
+      display: inline-block;
+      flex-shrink: 0;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    /* Red when not connected or error */
+    .serial-led.led-red {
+      background-color: #EF4444;
+      border-color: #DC2626;
+      box-shadow: 0 0 6px rgba(239, 68, 68, 0.7);
+    }
+
+    /* Dark green when serial connected */
+    .serial-led.led-dark-green {
+      background-color: #047857;
+      border-color: #065F46;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Light green when bits fly / data received */
+    .serial-led.led-flash {
+      background-color: #10B981;
+      border-color: #34D399;
+      box-shadow: 0 0 10px #34D399, inset 0 0 4px #ECFDF5;
+    }
+
     /* Buttons */
     .btn {
       font-family: var(--font-display);
@@ -447,7 +496,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
     .metric-row {
       display: flex;
-      align-items: baseline;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 0.75rem;
       padding: 0.35rem 0;
@@ -456,7 +505,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
     .metric-row-sm {
       display: flex;
-      align-items: baseline;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 0.75rem;
       padding: 0.35rem 0;
@@ -735,12 +784,17 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <path d="M10 55H38C41 55 43 57 43 59" fill="none" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="square"/>
       </svg>
       <div>
-        <span class="brand-title">WS2300 Telemetry</span>
+        <span class="brand-title">WS2300</span>
         <span class="brand-subtitle" id="header-port-label">/dev/ttyUSB0 · 2400 BAUD</span>
       </div>
     </a>
 
     <div class="header-controls">
+      <div class="serial-indicator" id="serial-indicator" title="Serial Data Port Status">
+        <span>SERIAL DATA</span>
+        <span class="serial-led led-red" id="serial-led" aria-hidden="true"></span>
+      </div>
+
       <span id="service-status-badge" class="badge badge-running">
         <span class="dot"></span>
         <span id="service-status-text">SERVICE RUNNING</span>
@@ -790,11 +844,11 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     <section id="view-dashboard" class="view-section active">
       <div class="timestamp-bar">
         <div class="ts-item">
-          Latest Reading Timestamp:
+          Latest Reading:
           <span class="ts-value" id="ts-latest">Waiting for station poll...</span>
         </div>
         <div class="ts-item">
-          Previous Reading Timestamp:
+          Previous Reading:
           <span class="ts-value" id="ts-previous">—</span>
         </div>
         <div class="ts-item">
@@ -848,8 +902,8 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <article class="card" id="card-outdoor">
           <div class="card-header">
             <div class="card-title-group">
-              <svg class="card-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+              <svg class="card-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L6 8h3l-4 5h3l-5 6h9v3h2v-3h9l-5-6h3l-4-5h3z"/>
               </svg>
               <h2 class="card-title">Outdoor</h2>
             </div>
@@ -1024,7 +1078,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <!-- Top Title & Action Bar -->
         <div class="settings-header-bar">
           <div class="settings-title-group">
-            <h1>Configuration &amp; Settings</h1>
+            <h1>Settings</h1>
             <p>Persisted atomically to <code>config.yaml</code></p>
           </div>
 
@@ -1047,7 +1101,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <!-- Tab 1: Serial Port & Metrics -->
         <div class="tab-panel active" id="tab-serial" role="tabpanel">
           <div class="form-group">
-            <label class="field-label" for="cfg-serial-port">Serial Port Device</label>
+            <label class="field-label" for="cfg-serial-port">Serial Port</label>
             <div style="display:flex;gap:0.5rem;">
               <input type="text" id="cfg-serial-port" name="serial_port" list="serial-ports-datalist" autocorrect="off" autocapitalize="off" spellcheck="false" required>
               <datalist id="serial-ports-datalist"></datalist>
@@ -1097,7 +1151,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <div class="tab-panel" id="tab-mqtt" role="tabpanel">
           <label class="checkbox-row" for="cfg-mqtt-enabled">
             <input type="checkbox" id="cfg-mqtt-enabled" name="mqtt_enabled">
-            <span>Enable MQTT Telemetry Publishing</span>
+            <span>Enable MQTT Publishing</span>
           </label>
 
           <div class="form-row-2">
@@ -1166,29 +1220,37 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
               <input type="text" id="cfg-smtp-host" name="smtp_host" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="form-group">
-              <label class="field-label" for="cfg-smtp-port">SMTP Port</label>
-              <input type="number" id="cfg-smtp-port" name="smtp_port">
+              <label class="field-label" for="cfg-smtp-security">Security / Encryption</label>
+              <select id="cfg-smtp-security" name="smtp_security">
+                <option value="starttls">STARTTLS (Port 587)</option>
+                <option value="tls">TLS / SSL (Port 465)</option>
+                <option value="plain">Plain / None (Port 25)</option>
+              </select>
             </div>
           </div>
           <div class="form-row-2">
+            <div class="form-group">
+              <label class="field-label" for="cfg-smtp-port">SMTP Port</label>
+              <input type="number" id="cfg-smtp-port" name="smtp_port">
+            </div>
             <div class="form-group">
               <label class="field-label" for="cfg-smtp-user">SMTP Username</label>
               <input type="text" id="cfg-smtp-user" name="smtp_user" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
+          </div>
+          <div class="form-row-2">
             <div class="form-group">
               <label class="field-label" for="cfg-smtp-pass">SMTP Password</label>
               <input type="password" id="cfg-smtp-pass" name="smtp_pass">
             </div>
-          </div>
-          <div class="form-row-2">
             <div class="form-group">
               <label class="field-label" for="cfg-smtp-from">From Email</label>
               <input type="email" id="cfg-smtp-from" name="smtp_from" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
-            <div class="form-group">
-              <label class="field-label" for="cfg-smtp-to">To Email</label>
-              <input type="email" id="cfg-smtp-to" name="smtp_to" autocorrect="off" autocapitalize="off" spellcheck="false">
-            </div>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="cfg-smtp-to">To Email</label>
+            <input type="email" id="cfg-smtp-to" name="smtp_to" autocorrect="off" autocapitalize="off" spellcheck="false">
           </div>
 
           <hr style="border:0;border-top:1px solid var(--border-main);margin:1.25rem 0;">
@@ -1446,7 +1508,43 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       return d.toLocaleString();
     }
 
+    let lastSeenReadingTs = null;
+    let serialFlashTimer = null;
+
     function renderSnapshot(snap) {
+      const serialLed = document.getElementById('serial-led');
+      const serialIndicator = document.getElementById('serial-indicator');
+      const isConnected = snap.serial_connected || (snap.running && !snap.last_error);
+
+      if (!isConnected) {
+        if (serialFlashTimer) {
+          clearTimeout(serialFlashTimer);
+          serialFlashTimer = null;
+        }
+        serialLed.className = 'serial-led led-red';
+        serialIndicator.title = snap.last_error ? `Serial Error: ${snap.last_error}` : 'Serial Port Disconnected (Service Stopped)';
+      } else {
+        const currentTs = snap.latest ? snap.latest.timestamp : null;
+        const isNewReading = currentTs && currentTs !== lastSeenReadingTs;
+
+        if (isNewReading) {
+          lastSeenReadingTs = currentTs;
+          // Pulse light green when bits fly / new data arrives
+          serialLed.className = 'serial-led led-flash';
+          serialIndicator.title = `Serial Port Active (Reading received at ${fmtTs(currentTs)})`;
+          if (serialFlashTimer) clearTimeout(serialFlashTimer);
+          serialFlashTimer = setTimeout(() => {
+            if (serialLed.classList.contains('led-flash')) {
+              serialLed.className = 'serial-led led-dark-green';
+              serialIndicator.title = 'Serial Port Connected (Idle, waiting for next poll)';
+            }
+          }, 850);
+        } else if (!serialLed.classList.contains('led-flash')) {
+          serialLed.className = 'serial-led led-dark-green';
+          serialIndicator.title = 'Serial Port Connected (Idle, waiting for next poll)';
+        }
+      }
+
       const badge = document.getElementById('service-status-badge');
       const statusText = document.getElementById('service-status-text');
       if (snap.alert_active) {
@@ -1584,6 +1682,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       document.getElementById('cfg-alert-minutes').value = cfg.alerts.stale_timeout_minutes;
       document.getElementById('cfg-email-enabled').checked = cfg.alerts.email.enabled;
       document.getElementById('cfg-smtp-host').value = cfg.alerts.email.smtp_host;
+      document.getElementById('cfg-smtp-security').value = cfg.alerts.email.smtp_security || 'starttls';
       document.getElementById('cfg-smtp-port').value = cfg.alerts.email.smtp_port;
       document.getElementById('cfg-smtp-user').value = cfg.alerts.email.smtp_username;
       document.getElementById('cfg-smtp-pass').value = cfg.alerts.email.smtp_password;
@@ -1646,6 +1745,17 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     }
 
     document.getElementById('btn-scan-ports').addEventListener('click', scanSerialPorts);
+    document.getElementById('cfg-smtp-security').addEventListener('change', (e) => {
+      const portInput = document.getElementById('cfg-smtp-port');
+      const val = e.target.value;
+      if (val === 'starttls') {
+        portInput.value = 587;
+      } else if (val === 'tls') {
+        portInput.value = 465;
+      } else if (val === 'plain') {
+        portInput.value = 25;
+      }
+    });
     document.getElementById('btn-reload-cfg').addEventListener('click', async () => {
       await loadConfigIntoForm();
       showToast('Configuration reloaded from config.yaml');
@@ -1685,6 +1795,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
           email: {
             enabled: document.getElementById('cfg-email-enabled').checked,
             smtp_host: document.getElementById('cfg-smtp-host').value.trim(),
+            smtp_security: document.getElementById('cfg-smtp-security').value,
             smtp_port: Number(document.getElementById('cfg-smtp-port').value),
             smtp_username: document.getElementById('cfg-smtp-user').value.trim(),
             smtp_password: document.getElementById('cfg-smtp-pass').value,

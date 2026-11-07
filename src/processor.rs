@@ -14,6 +14,7 @@ pub struct TimestampedReading {
 pub struct ServiceStatusSnapshot {
     pub running: bool,
     pub demo_mode: bool,
+    pub serial_connected: bool,
     pub last_error: Option<String>,
     pub latest: Option<TimestampedReading>,
     pub previous: Option<TimestampedReading>,

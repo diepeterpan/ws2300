@@ -49,10 +49,14 @@ impl SharedState {
 
     pub async fn snapshot(&self) -> ServiceStatusSnapshot {
         let cfg = self.config.read().await;
+        let running = *self.running.read().await;
+        let last_err = self.last_error.read().await.clone();
+        let serial_connected = running && last_err.is_none();
         ServiceStatusSnapshot {
-            running: *self.running.read().await,
+            running,
             demo_mode: cfg.service.demo_mode,
-            last_error: self.last_error.read().await.clone(),
+            serial_connected,
+            last_error: last_err,
             latest: self.latest.read().await.clone(),
             previous: self.previous.read().await.clone(),
             alert_active: *self.alert_active.read().await,

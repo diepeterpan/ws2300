@@ -28,6 +28,7 @@ alerts:
     enabled: false
     smtp_host: "smtp.example.com"
     smtp_port: 587
+    smtp_security: "starttls"  # Options: "starttls" (port 587), "tls" (port 465), "plain" (port 25)
     smtp_username: ""
     smtp_password: ""
     from_address: "ws2300@example.com"

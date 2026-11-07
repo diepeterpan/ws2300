@@ -81,13 +81,24 @@ async fn send_email(cfg: &EmailAlertConfig, subject: &str, body: &str) -> Result
         .body(body.to_string())
         .map_err(|e| format!("Failed to construct email: {e}"))?;
 
-    let mut builder = if cfg.smtp_port == 465 {
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
-            .map_err(|e| format!("SMTP relay error: {e}"))?
-    } else {
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)
-            .map_err(|e| format!("SMTP STARTTLS error: {e}"))?
-            .port(cfg.smtp_port)
+    let sec = cfg.smtp_security.to_ascii_lowercase();
+    let mut builder = match sec.as_str() {
+        "plain" | "none" => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&cfg.smtp_host)
+            .port(cfg.smtp_port),
+        "tls" | "ssl" => AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
+            .map_err(|e| format!("SMTP TLS error: {e}"))?
+            .port(cfg.smtp_port),
+        _ => {
+            // Default to STARTTLS (or TLS if port is explicitly 465 and unspecified)
+            if sec.is_empty() && cfg.smtp_port == 465 {
+                AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
+                    .map_err(|e| format!("SMTP relay error: {e}"))?
+            } else {
+                AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)
+                    .map_err(|e| format!("SMTP STARTTLS error: {e}"))?
+                    .port(cfg.smtp_port)
+            }
+        }
     };
 
     if !cfg.smtp_username.trim().is_empty() {
