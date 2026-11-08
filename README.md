@@ -174,6 +174,17 @@ To pass through a physical USB/RS232 serial adapter, uncomment the `devices` map
 ./bin/ws2300 --config config.yaml
 ```
 
+### Serial Port Troubleshooting (`Device or resource busy`)
+If you encounter `Serial Status Warning: Device or resource busy (os error 16)`, a background system daemon on Linux (typically `ModemManager` or `brltty`) is locking the USB-to-serial adapter:
+```bash
+# Check if ModemManager is running
+systemctl status ModemManager
+
+# Stop and disable ModemManager from locking serial devices
+sudo systemctl stop ModemManager.service
+sudo systemctl disable ModemManager.service
+```
+
 ### One-Shot CLI JSON Output
 For backwards-compatible single-read JSON output to stdout:
 ```bash

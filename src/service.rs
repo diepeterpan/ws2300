@@ -88,9 +88,14 @@ pub fn spawn_background_workers(state: Arc<SharedState>) {
 
 async fn poller_loop(state: Arc<SharedState>) {
     let mut cycle: u64 = 0;
+    let mut persistent_dev: Option<ws2300::Device> = None;
+    let mut active_port = String::new();
+
     loop {
         let is_running = *state.running.read().await;
         if !is_running {
+            persistent_dev = None;
+            active_port.clear();
             state.wake_poller.notified().await;
             continue;
         }
@@ -101,19 +106,52 @@ async fn poller_loop(state: Arc<SharedState>) {
         let port = cfg.serial.port.clone();
         let demo_mode = cfg.service.demo_mode;
 
-        let read_result: Result<Data, String> = if demo_mode {
-            Ok(generate_demo_reading(cycle, include_wind, include_rain))
+        // If port changed or demo mode enabled, drop any open device
+        if demo_mode || active_port != port {
+            persistent_dev = None;
+            active_port = port.clone();
+        }
+
+        let (read_result, new_dev) = if demo_mode {
+            (Ok(generate_demo_reading(cycle, include_wind, include_rain)), None)
         } else {
+            let mut dev_opt = persistent_dev;
+            let port_clone = port.clone();
             tokio::task::spawn_blocking(move || {
-                let dev = ws2300::Device::new(port).map_err(|e| e.to_string())?;
-                dev.read_filtered(include_wind, include_rain)
-                    .map_err(|e| e.to_string())
+                let dev_ref = match dev_opt.as_mut() {
+                    Some(d) => d,
+                    None => match ws2300::Device::new(port_clone) {
+                        Ok(new_d) => {
+                            dev_opt = Some(new_d);
+                            dev_opt.as_mut().unwrap()
+                        }
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            let msg = if err_str.contains("Device or resource busy") || err_str.contains("os error 16") {
+                                format!(
+                                    "{err_str} (Tip: If ModemManager or another daemon is locking the port, run: sudo systemctl stop ModemManager)"
+                                )
+                            } else {
+                                err_str
+                            };
+                            return (Err(msg), None);
+                        }
+                    },
+                };
+
+                match dev_ref.read_filtered(include_wind, include_rain) {
+                    Ok(data) => (Ok(data), dev_opt),
+                    Err(e) => {
+                        // Drop port handle so next cycle reconnects cleanly
+                        (Err(e.to_string()), None)
+                    }
+                }
             })
             .await
-            .map_err(|e| format!("Serial task join error: {e}"))
-            .and_then(|r| r)
+            .unwrap_or_else(|e| (Err(format!("Serial task join error: {e}")), None))
         };
 
+        persistent_dev = new_dev;
         cycle = cycle.wrapping_add(1);
 
         match read_result {
