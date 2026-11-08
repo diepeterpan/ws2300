@@ -860,7 +860,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         <span id="service-status-text">SERVICE RUNNING</span>
       </span>
 
-      <button type="button" id="btn-toggle-service" class="btn btn-danger">Stop</button>
+      <button type="button" id="btn-toggle-service" class="btn btn-danger" style="display: none;">Stop</button>
 
       <div id="oidc-user-badge" class="user-badge" style="display: none;" title="Authenticated via OIDC">
         <svg class="user-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -893,16 +893,16 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
             <span>▸</span>
           </button>
         </li>
-        <li>
+        <li id="drawer-settings-item">
           <button type="button" class="nav-item-btn" id="nav-btn-settings">
             <span>Settings</span>
             <span>▸</span>
           </button>
         </li>
-        <li id="drawer-logout-item" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border-main); padding-top: 0.5rem;">
-          <a href="/auth/logout" class="nav-item-btn" style="text-decoration: none; color: #DC2626;">
-            <span>Log Out</span>
-            <span>⎋</span>
+        <li id="drawer-auth-item" style="display: none; margin-top: 1rem; border-top: 1px solid var(--border-main); padding-top: 0.5rem;">
+          <a id="drawer-auth-link" href="/auth/login" class="nav-item-btn" style="text-decoration: none;">
+            <span id="drawer-auth-label">Log In</span>
+            <span id="drawer-auth-icon">→</span>
           </a>
         </li>
       </ul>
@@ -1533,6 +1533,10 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
 
     function switchView(viewName) {
       if (viewName === 'settings') {
+        if (!isUserAuthorized) {
+          switchView('dashboard');
+          return;
+        }
         viewDashboard.classList.remove('active');
         viewSettings.classList.add('active');
         navBtnDashboard.classList.remove('active');
@@ -1635,16 +1639,7 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
       }
 
       currentServiceRunning = !!snap.running;
-
-      if (toggleBtn) {
-        if (snap.running) {
-          toggleBtn.textContent = 'Stop';
-          toggleBtn.className = 'btn btn-danger';
-        } else {
-          toggleBtn.textContent = 'Start';
-          toggleBtn.className = 'btn btn-primary';
-        }
-      }
+      updateServiceToggleButton(snap.running);
 
       document.getElementById('header-port-label').textContent =
         `${snap.serial_port} · Every ${snap.poll_interval_seconds}s`;
@@ -1952,6 +1947,24 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
     });
 
     let currentServiceRunning = false;
+    let isUserAuthorized = false;
+
+    function updateServiceToggleButton(snapRunning) {
+      const toggleBtn = document.getElementById('btn-toggle-service');
+      if (!toggleBtn) return;
+      if (!isUserAuthorized) {
+        toggleBtn.style.display = 'none';
+        return;
+      }
+      toggleBtn.style.display = 'inline-block';
+      if (snapRunning) {
+        toggleBtn.textContent = 'Stop';
+        toggleBtn.className = 'btn btn-danger';
+      } else {
+        toggleBtn.textContent = 'Start';
+        toggleBtn.className = 'btn btn-primary';
+      }
+    }
 
     document.getElementById('btn-toggle-service').addEventListener('click', async () => {
       const toggleBtn = document.getElementById('btn-toggle-service');
@@ -1987,30 +2000,64 @@ pub const INDEX_HTML: &str = r##"<!DOCTYPE html>
         const data = await res.json();
         const badge = document.getElementById('oidc-user-badge');
         const nameEl = document.getElementById('oidc-user-name');
-        const drawerLogout = document.getElementById('drawer-logout-item');
-        if (data.oidc_enabled && data.username) {
+        const settingsNavItem = document.getElementById('drawer-settings-item');
+        const drawerAuthItem = document.getElementById('drawer-auth-item');
+        const drawerAuthLink = document.getElementById('drawer-auth-link');
+        const drawerAuthLabel = document.getElementById('drawer-auth-label');
+        const drawerAuthIcon = document.getElementById('drawer-auth-icon');
+
+        if (!data.oidc_enabled) {
+          // OIDC disabled: no user badge, no login/logout button, settings accessible to all
+          isUserAuthorized = true;
+          badge.style.display = 'none';
+          if (settingsNavItem) settingsNavItem.style.display = 'block';
+          if (drawerAuthItem) drawerAuthItem.style.display = 'none';
+        } else if (data.authenticated && data.username) {
+          // OIDC enabled & user logged in
+          isUserAuthorized = true;
           nameEl.textContent = data.username;
           badge.style.display = 'inline-flex';
-          drawerLogout.style.display = 'block';
+          if (settingsNavItem) settingsNavItem.style.display = 'block';
+          if (drawerAuthItem) {
+            drawerAuthItem.style.display = 'block';
+            drawerAuthLink.href = '/auth/logout';
+            drawerAuthLink.style.color = '#DC2626';
+            drawerAuthLabel.textContent = 'Log Out';
+            drawerAuthIcon.textContent = '⎋';
+          }
         } else {
+          // OIDC enabled & user NOT logged in: hide settings, hide user badge, show Login
+          isUserAuthorized = false;
           badge.style.display = 'none';
-          drawerLogout.style.display = 'none';
+          if (settingsNavItem) settingsNavItem.style.display = 'none';
+          if (drawerAuthItem) {
+            drawerAuthItem.style.display = 'block';
+            drawerAuthLink.href = '/auth/login';
+            drawerAuthLink.style.color = 'inherit';
+            drawerAuthLabel.textContent = 'Log In';
+            drawerAuthIcon.textContent = '→';
+          }
+          // If on settings view, redirect to dashboard
+          if (viewSettings && viewSettings.classList.contains('active')) {
+            switchView('dashboard');
+          }
         }
+        updateServiceToggleButton(currentServiceRunning);
       } catch (_) {}
     }
 
     async function init() {
       const statusRes = await fetch('/api/status');
-      if (statusRes.status === 401) {
-        window.location.href = '/auth/login';
-        return;
-      }
       if (statusRes.ok) {
         renderSnapshot(await statusRes.json());
       }
       await checkCurrentUser();
-      await loadConfigIntoForm();
-      await scanSerialPorts();
+
+      // Only load sensitive configuration form and serial ports if user is authorized
+      if (isUserAuthorized) {
+        await loadConfigIntoForm();
+        await scanSerialPorts();
+      }
 
       const es = new EventSource('/api/events');
       es.onmessage = (evt) => {

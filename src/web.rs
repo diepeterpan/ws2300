@@ -26,9 +26,6 @@ use tokio_stream::wrappers::BroadcastStream;
 
 pub fn build_router(state: Arc<SharedState>) -> Router {
     let protected = Router::new()
-        .route("/", get(index_handler))
-        .route("/api/status", get(status_handler))
-        .route("/api/events", get(sse_handler))
         .route(
             "/api/config",
             get(get_config_handler).post(save_config_handler),
@@ -37,7 +34,6 @@ pub fn build_router(state: Arc<SharedState>) -> Router {
         .route("/api/service/start", post(start_service_handler))
         .route("/api/service/stop", post(stop_service_handler))
         .route("/api/alerts/test", post(test_alert_handler))
-        .route("/api/auth/me", get(get_current_user_handler))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             oidc_auth_middleware,
@@ -45,8 +41,12 @@ pub fn build_router(state: Arc<SharedState>) -> Router {
 
     Router::new()
         .merge(protected)
+        .route("/", get(index_handler))
         .route("/favicon.svg", get(favicon_handler))
         .route("/site.webmanifest", get(manifest_handler))
+        .route("/api/status", get(status_handler))
+        .route("/api/events", get(sse_handler))
+        .route("/api/auth/me", get(get_current_user_handler))
         .route("/auth/login", get(oidc_login_handler))
         .route("/auth/callback", get(oidc_callback_handler))
         .route("/auth/logout", get(oidc_logout_handler))
@@ -214,15 +214,21 @@ async fn get_current_user_handler(
 ) -> impl IntoResponse {
     let oidc_cfg = state.config.read().await.oidc.clone();
     if !oidc_cfg.enabled {
-        return Json(json!({ "oidc_enabled": false, "username": null }));
+        return Json(json!({
+            "oidc_enabled": false,
+            "authenticated": false,
+            "username": null
+        }));
     }
 
     let username = jar
         .get(SESSION_COOKIE_NAME)
         .and_then(|c| verify_session_cookie_value(c.value(), &oidc_cfg.session_secret));
 
+    let is_authenticated = username.is_some();
     Json(json!({
         "oidc_enabled": true,
+        "authenticated": is_authenticated,
         "username": username
     }))
 }
