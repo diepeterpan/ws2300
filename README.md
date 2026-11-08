@@ -1,10 +1,7 @@
 # WS2300 Weather Station Telemetry & Web UI
 
-[![Github actions](https://github.com/sanpii/ws2300/workflows/.github/workflows/ci.yml/badge.svg)](https://github.com/sanpii/ws2300/actions?query=workflow%3A.github%2Fworkflows%2Fci.yml)
-[![pipeline status](https://gitlab.com/sanpi/ws2300/badges/main/pipeline.svg)](https://gitlab.com/sanpi/ws2300/-/commits/main)
-
 <p align="center">
-  <img src="https://www.deltron.nl/cdn/shop/files/WS2300_a8c70825-c4e1-4817-a438-b1ebeaebade5.jpg?crop=center&height=1200&v=1731585808&width=1200" alt="La Crosse Technology WS2300 Weather Station" width="380">
+  <img src="doc/ws2300_station.jpg" alt="La Crosse Technology WS2300 Weather Station" width="380">
 </p>
 
 A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Crosse Technology WS2300** weather station (originally inspired by [Open2300](http://www.lavrsen.dk/foswiki/bin/view/Open2300/WebHome) and part of the [Uncontrolled Mechanical Ventilation](https://hackaday.io/project/12708-uncontrolled-mechanical-ventilation) project).
@@ -17,15 +14,24 @@ A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Cross
 
 ---
 
+## Hardware Protocol & Memory Architecture
+
+Detailed documentation of the WS2300 physical serial protocol and device memory layout is maintained under the [`doc/`](doc/) directory:
+- [**WS2300 Serial Protocol & API (`doc/ws2300_api.md`)**](doc/ws2300_api.md): Explains the 2400-baud nibble communication format, addressing commands (`0x82 + nibble*4`), read acknowledgments, checksum validation, and reset sequences.
+- [**WS2300 Memory Map (`doc/memory_map_2300.txt`)**](doc/memory_map_2300.txt): Full hardware memory address table covering indoor/outdoor temperature nibbles, dewpoint, humidity, wind direction/speed, rain gauges, and station alarm registers.
+
+---
+
 ## Key Features
 
 - **Light Tropical-Blue Web UI**:
   - **Dashboard Default Page**: Displays real-time **Latest** and **Previous** sensor readings side-by-side along with exact reading timestamps, barometric tendency, station forecast, and a dynamic SVG wind compass.
+  - **Anonymous / Public Telemetry Viewing**: Live weather telemetry is viewable without logging in. Settings and service start/stop controls are protected behind authentication.
   - **Distinctive Typography & Sharp Geometry**: Styled with `Chakra Petch`, `Space Grotesk`, and `JetBrains Mono` (`tabular-nums`) using crisp `3px` architectural corners and badges.
-  - **Hamburger Navigation Drawer with Sub-Items**: Slide-out navigation menu providing quick jumps to the Dashboard and each Settings sub-section (`Serial Port & Metrics`, `MQTT Server & Topic`, `Stale Data Alerts`, `OIDC Authentication`, and `Out-of-Bounds Filters`).
+  - **Hamburger Navigation Drawer with Contextual Auth**: Slide-out navigation menu providing quick jumps to the Dashboard and Settings. Shows **"Log In →"** when unauthenticated and switches to **"Log Out ⎋"** when authenticated.
   - **Custom Weather Logo & Icons**: Embedded vector weather iconography and favicon/manifest.
 - **Service Control & Serial Port Management**:
-  - **Start / Stop Service** directly from the top header bar.
+  - **Start / Stop Service** directly from the top header bar (requires login when OIDC is enabled).
   - **Serial Port Discovery**: Scan and select available serial ports (`/dev/ttyUSB0`, `/dev/ttyS0`, etc.) and configure polling intervals.
 - **Include / Exclude `WIND` and `RAIN` Metrics**:
   - Independently toggle `include_wind` and `include_rain` in Settings (`config.yaml`).
@@ -38,8 +44,9 @@ A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Cross
 - **Stale Data Watchdog & Multi-Channel Alerts**:
   - Triggers an alert when no valid values are received for `N` minutes (`stale_timeout_minutes`).
   - Supports **Email (SMTP)**, **Telegram Bot API**, and **Generic Webhook URLs** (compatible with Ntfy, Gotify, Slack, Discord, and Apprise).
-- **Optional OIDC Authentication & Single Sign-On**:
+- **Optional OIDC Authentication & Role Gating**:
   - Toggleable OpenID Connect (OIDC) login flow (`oidc.enabled`) supporting standard discovery, authorization code flow with **RFC 7636 PKCE (S256)**, and authenticated user indicator in the header.
+  - When unauthenticated, visitors have read-only access to weather telemetry while Settings and service controls remain secured.
 - **Atomic YAML Configuration**:
   - All settings are stored in `config.yaml` (see [`config.example.yaml`](config.example.yaml)).
 
@@ -47,7 +54,12 @@ A 100% pure Rust telemetry daemon, Web UI, and MQTT publisher for the **La Cross
 
 ## OpenID Connect (OIDC) & Single Sign-On
 
-WS2300 includes built-in OIDC identity authentication to protect the Web UI and API routes without complex RBAC configuration.
+WS2300 includes built-in OIDC identity authentication to protect configuration and service management while keeping dashboard metrics public.
+
+### Anonymous Viewing & Auth-Gating
+- **Unauthenticated / Guest Visitors**: Can view live weather readings, trends, and SSE telemetry events. The top header Start/Stop button and Settings drawer navigation item are hidden, and the hamburger drawer presents a **"Log In →"** link.
+- **Authenticated Users**: The top header displays a human torso outline with the logged-in username, reveals the **Start/Stop** service controls, unlocks the **Settings** view, and provides **"Log Out ⎋"**.
+- **OIDC Disabled (`oidc.enabled = false`)**: If authentication is disabled, Settings and service controls are open to everyone, and no username badge or login links are displayed.
 
 ### Security & PKCE Support
 - **Proof Key for Code Exchange (RFC 7636 PKCE)**: WS2300 implements the `S256` code challenge and verifier flow during the authorization code exchange, protecting against code interception attacks.
